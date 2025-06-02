@@ -26,7 +26,8 @@
     body { font-family: sans-serif; padding: 1em; }
     input, select, textarea, button { width: 100%; margin-bottom: 0.5em; font-size: 1em; }
     table { width: 100%; border-collapse: collapse; margin-top: 1em; }
-    th, td { border: 1px solid #ccc; padding: 4px; font-size: 0.9em; text-align: left; }
+    th, td {    white-space: nowrap;
+    width: 100px; border: 1px solid #ccc; padding: 4px; font-size: 0.9em; text-align: left; }
     .section { border: 1px solid #ddd; padding: 10px; margin-bottom: 1em; background: #f9f9f9; }
     .history-entry { border: 1px solid #ccc; padding: 6px; margin-bottom: 6px; }
     .button-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 1em; }
@@ -190,7 +191,7 @@
           <td>${p.tags}</td>
           <td>${p.history.map(h => `${h.branch}/${h.department}/${h.position} (${h.from}〜${h.to})`).join("<br>")}</td>
           <td>
-            <button onclick="editProfile(${idx})">編集</button>
+            <button onclick="editProfile(${idx})">編集</button><br>
             <button onclick="deleteProfile(${idx})">削除</button>
           </td>
         `;
