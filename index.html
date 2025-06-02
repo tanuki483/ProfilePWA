@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>人材管理PWA</title>
+  <link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png" />
+<meta name="theme-color" content="#0d6efd" />
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("sw.js").then(
+        function (registration) {
+          console.log("ServiceWorker registered: ", registration.scope);
+        },
+        function (err) {
+          console.log("ServiceWorker registration failed: ", err);
+        }
+      );
+    });
+  }
+</script>
+
+  <style>
+    body { font-family: sans-serif; padding: 1em; }
+    input, select, textarea, button { width: 100%; margin-bottom: 0.5em; font-size: 1em; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+    th, td { border: 1px solid #ccc; padding: 4px; font-size: 0.9em; text-align: left; }
+    .section { border: 1px solid #ddd; padding: 10px; margin-bottom: 1em; background: #f9f9f9; }
+    .history-entry { border: 1px solid #ccc; padding: 6px; margin-bottom: 6px; }
+    .button-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 1em; }
+    .tag-filter { margin-top: 1em; }
+  </style>
+</head>
+<body>
+  <h1>人物プロフィール管理</h1>
+
+  <div class="tag-filter">
+    <input type="text" id="tagFilter" placeholder="タグで絞り込み（カンマ区切り）" />
+    <button onclick="filterByTags()">絞り込み</button>
+    <button onclick="clearFilter()">解除</button>
+    <select id="sortSelect" onchange="sortProfiles()">
+      <option value="">-- ソート項目 --</option>
+      <option value="name">名前</option>
+      <option value="dob">生年月日</option>
+      <option value="height">身長</option>
+      <option value="weight">体重</option>
+      <option value="gender">性別</option>
+      <option value="vision">視力</option>
+      <option value="workType">仕事の系統</option>
+    </select>
+    <select id="sortOrder" onchange="sortProfiles()">
+      <option value="asc">昇順</option>
+      <option value="desc">降順</option>
+    </select>
+  </div>
+
+  <div class="section">
+    <form id="profile-form">
+      <input type="hidden" name="editIndex" value="" />
+      <input type="text" placeholder="名前" name="name" />
+      <input type="date" placeholder="生年月日" name="dob" />
+      <input type="text" placeholder="期別 (カンマ区切り)" name="periods" />
+      <input type="text" placeholder="出身地" name="birthplace" />
+      <input type="number" placeholder="身長(cm)" name="height" />
+      <input type="number" placeholder="体重(kg)" name="weight" />
+      <select name="gender">
+        <option value="">性別</option><option>男性</option><option>女性</option><option>その他</option>
+      </select>
+      <select name="vision">
+        <option value="">視力矯正</option><option>裸眼</option><option>眼鏡</option><option>コンタクト</option>
+      </select>
+      <input type="text" placeholder="SNS (例: Twitter: @xxx)" name="sns" />
+      <select name="workType">
+        <option value="">仕事の系統</option>
+        <option>個人系</option><option>法人系</option><option>資産系</option><option>徴収系</option><option>管運系</option><option>その他</option>
+      </select>
+      <input type="tel" placeholder="電話番号" name="phone" />
+      <input type="text" placeholder="趣味" name="hobby" />
+      <input type="text" placeholder="家族構成" name="family" />
+      <textarea placeholder="メモ" name="note"></textarea>
+      <input type="text" placeholder="タグ (カンマ区切り)" name="tags" />
+
+      <div class="section">
+        <h3>所属履歴</h3>
+        <div id="history-list"></div>
+        <button type="button" onclick="addHistory()">＋履歴追加</button>
+      </div>
+
+      <button type="submit">保存</button>
+    </form>
+  </div>
+
+  <div class="button-row">
+    <button onclick="exportJSON()">JSON出力</button>
+    <input type="file" onchange="importJSON(event)" />
+  </div>
+
+  <table id="profile-table">
+    <thead>
+      <tr><th>名前</th><th>生年月日</th><th>期別</th><th>出身地</th><th>身長</th><th>体重</th><th>性別</th><th>視力矯正</th><th>SNS</th><th>仕事の系統</th><th>電話番号</th><th>趣味</th><th>家族構成</th><th>メモ</th><th>タグ</th><th>所属履歴</th><th>操作</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    let profiles = [];
+
+    function getFormValue(name) {
+      const val = document.forms["profile-form"][name].value.trim();
+      return val === "" ? "N/A" : val;
+    }
+
+    function addHistory(data = {}) {
+      const div = document.createElement("div");
+      div.className = "history-entry";
+      div.innerHTML = `
+        <input placeholder="所属署" value="${data.branch || ''}" />
+        <input placeholder="所属部門" value="${data.department || ''}" />
+        <input placeholder="役職" value="${data.position || ''}" />
+        <input type="month" placeholder="開始年月" value="${data.from || ''}" />
+        <input type="month" placeholder="終了年月" value="${data.to || ''}" />
+        <button type="button" onclick="this.parentElement.remove()">削除</button>
+      `;
+      document.getElementById("history-list").appendChild(div);
+    }
+
+    function getHistoryData() {
+      return Array.from(document.querySelectorAll(".history-entry")).map(entry => ({
+        branch: entry.children[0].value || "N/A",
+        department: entry.children[1].value || "N/A",
+        position: entry.children[2].value || "N/A",
+        from: entry.children[3].value || "N/A",
+        to: entry.children[4].value || "N/A",
+      }));
+    }
+
+    document.getElementById("profile-form").onsubmit = (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const data = {
+        name: getFormValue("name"),
+        dob: getFormValue("dob"),
+        periods: getFormValue("periods").split(",").map(p => p.trim()),
+        birthplace: getFormValue("birthplace"),
+        height: getFormValue("height"),
+        weight: getFormValue("weight"),
+        gender: getFormValue("gender"),
+        vision: getFormValue("vision"),
+        sns: getFormValue("sns"),
+        workType: getFormValue("workType"),
+        phone: getFormValue("phone"),
+        hobby: getFormValue("hobby"),
+        family: getFormValue("family"),
+        note: getFormValue("note"),
+        tags: getFormValue("tags").split(",").map(t => t.trim()),
+        history: getHistoryData()
+      };
+      const index = form.editIndex.value;
+      if (index !== "") profiles[+index] = data;
+      else profiles.push(data);
+
+      form.reset();
+      form.editIndex.value = "";
+      document.getElementById("history-list").innerHTML = "";
+      renderTable();
+    };
+
+    function renderTable(list = profiles) {
+      const tbody = document.querySelector("#profile-table tbody");
+      tbody.innerHTML = "";
+      list.forEach((p, idx) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${p.name}</td>
+          <td>${p.dob}</td>
+          <td>${p.periods}</td>
+          <td>${p.birthplace}</td>
+          <td>${p.height}</td>
+          <td>${p.weight}</td>
+          <td>${p.gender}</td>
+          <td>${p.vision}</td>
+          <td>${p.sns}</td>
+          <td>${p.workType}</td>
+          <td>${p.phone}</td>
+          <td>${p.hobby}</td>
+          <td>${p.family}</td>
+          <td>${p.note}</td>
+          <td>${p.tags}</td>
+          <td>${p.history.map(h => `${h.branch}/${h.department}/${h.position} (${h.from}〜${h.to})`).join("<br>")}</td>
+          <td>
+            <button onclick="editProfile(${idx})">編集</button>
+            <button onclick="deleteProfile(${idx})">削除</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function editProfile(index) {
+      const p = profiles[index];
+      const form = document.forms["profile-form"];
+      form.editIndex.value = index;
+      form.name.value = p.name;
+      form.dob.value = p.dob !== "N/A" ? p.dob : "";
+      form.periods.value = p.periods.join(", ");
+      form.birthplace.value = p.birthplace;
+      form.height.value = p.height;
+      form.weight.value = p.weight;
+      form.gender.value = p.gender;
+      form.vision.value = p.vision;
+      form.sns.value = p.sns;
+      form.workType.value = p.workType;
+      form.phone.value = p.phone;
+      form.hobby.value = p.hobby;
+      form.family.value = p.family;
+      form.note.value = p.note;
+      form.tags.value = p.tags.join(", ");
+      document.getElementById("history-list").innerHTML = "";
+      p.history.forEach(addHistory);
+    }
+
+    function deleteProfile(idx) {
+      if (confirm("このプロファイルを削除しますか？")) {
+        profiles.splice(idx, 1);
+        renderTable();
+      }
+    }
+
+    function exportJSON() {
+      const blob = new Blob([JSON.stringify(profiles, null, 2)], { type: "application/json" });
+      const link = document.createElement("a");
+
+  const now = new Date();
+  const pad = (n) => n.toString().padStart(2, '0');
+
+  const filename = "profile" + [
+    now.getFullYear(),
+    pad(now.getMonth() + 1),
+    pad(now.getDate()),
+    pad(now.getHours()),
+    pad(now.getMinutes()),
+    pad(now.getSeconds())
+  ].join('') + ".json";
+
+
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      link.click();
+    }
+
+    function importJSON(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        profiles = JSON.parse(e.target.result);
+        renderTable();
+      };
+      reader.readAsText(file);
+    }
+
+
+    function filterByTags() {
+  const tag = tagFilter.value.toLowerCase();
+  const filtered = profiles.filter((p) => {
+    const values = Object.values(p)
+      .map((v) =>
+        Array.isArray(v)
+          ? v.map((entry) => JSON.stringify(entry)).join(" ")
+          : typeof v === "object"
+          ? JSON.stringify(v)
+          : String(v)
+      )
+      .join(" ")
+      .toLowerCase();
+
+    return (
+      values.includes(tag)
+    );
+  });
+
+  renderTable(filtered);
+    }
+
+    function clearFilter() {
+      document.getElementById("tagFilter").value = "";
+      renderTable();
+    }
+
+    function sortProfiles() {
+      const key = document.getElementById("sortSelect").value;
+      const order = document.getElementById("sortOrder").value;
+      if (!key) return renderTable();
+      const sorted = [...profiles].sort((a, b) => {
+        const va = a[key] || "";
+        const vb = b[key] || "";
+        return (va > vb ? 1 : -1) * (order === "asc" ? 1 : -1);
+      });
+      renderTable(sorted);
+    }
+
+    // Service Worker 登録
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js").then(() => {
+        console.log("Service Worker registered");
+      }).catch(err => {
+        console.error("Service Worker registration failed:", err);
+      });
+    }
+  </script>
+</body>
+</html>
